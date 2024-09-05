@@ -1,6 +1,7 @@
 # big-AGI non-code files
 /docs/
 /dist/
+/infra/
 README.md
 
 # Ignore build and log files

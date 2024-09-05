@@ -32,6 +32,11 @@ yarn-error.log*
 # local env files
 .env
 .env.*
+terraform.tfvars
+
+# terraform
+.terraform*
+terraform.tfstate*
 
 # vercel
 .vercel
