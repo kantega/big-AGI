@@ -53,7 +53,7 @@ resource "azurerm_service_plan" "asp" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   os_type             = "Linux"
-  sku_name            = "B2"
+  sku_name            = "B3"
 }
 
 resource "azurerm_linux_web_app" "browserless" {
@@ -128,11 +128,52 @@ resource "azurerm_linux_web_app" "app" {
   service_plan_id     = azurerm_service_plan.asp.id
 
   app_settings = {
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
-    WEBSITES_PORT                       = "3000"
-    OPENAI_API_KEY                      = var.openai_api_key
-    ANTHROPIC_API_KEY                   = var.anthropic_api_key
-    GEMINI_API_KEY                      = var.gemini_api_key
+    WEBSITES_ENABLE_APP_SERVICE_STORAGE        = "false"
+    WEBSITES_PORT                              = "3000"
+    OPENAI_API_KEY                             = var.openai_api_key
+    ANTHROPIC_API_KEY                          = var.anthropic_api_key
+    GEMINI_API_KEY                             = var.gemini_api_key
+    DOCKER_ENABLE_CI                           = "true"
+    MICROSOFT_PROVIDER_AUTHENTICATION_SECRET   = var.azure_ad_client_secret
+    WEBSITE_AUTH_AAD_ALLOWED_TENANTS           = var.azure_ad_tenant_id
+    PUPPETEER_WSS_ENDPOINT                     = "wss://${var.project_name}-browserless.azurewebsites.net"
+  }
+
+  auth_settings_v2 {
+    auth_enabled             = true
+    default_provider         = "azureactivedirectory"
+    require_authentication   = true
+    unauthenticated_action   = "RedirectToLoginPage"
+    http_route_api_prefix    = "/.auth"
+    forward_proxy_convention = "NoProxy"
+    excluded_paths           = []
+    require_https            = true
+    runtime_version          = "~1"
+
+    active_directory_v2 {
+      client_id                       = var.azure_ad_client_id
+      client_secret_setting_name      = "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
+      tenant_auth_endpoint            = "https://sts.windows.net/${var.azure_ad_tenant_id}/v2.0"
+      allowed_applications            = [var.azure_ad_client_id]
+      allowed_audiences               = ["api://${var.azure_ad_client_id}"]
+      allowed_groups                  = []
+      allowed_identities              = []
+      jwt_allowed_client_applications = []
+      jwt_allowed_groups              = []
+      login_parameters                = {}
+      www_authentication_disabled     = false
+    }
+
+    login {
+      token_store_enabled               = true
+      token_refresh_extension_time      = 72
+      preserve_url_fragments_for_logins = false
+      cookie_expiration_convention      = "FixedTime"
+      cookie_expiration_time            = "08:00:00"
+      nonce_expiration_time             = "00:05:00"
+      validate_nonce                    = true
+      allowed_external_redirect_urls    = []
+    }
   }
 
   site_config {
@@ -174,6 +215,10 @@ resource "azurerm_linux_web_app" "app" {
     type = "SystemAssigned"
   }
 
+  sticky_settings {
+    app_setting_names = ["MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"]
+}
+
   depends_on = [
     azurerm_container_registry.acr,
     azurerm_subnet.subnet
@@ -188,18 +233,4 @@ resource "azurerm_app_service_virtual_network_swift_connection" "app_vnet_integr
 resource "azurerm_app_service_virtual_network_swift_connection" "browserless_vnet_integration" {
   app_service_id = azurerm_linux_web_app.browserless.id
   subnet_id      = azurerm_subnet.subnet.id
-}
-
-resource "null_resource" "update_settings" {
-  triggers = {
-    always_run = "${timestamp()}"
   }
-
-  provisioner "local-exec" {
-    command = <<EOT
-az webapp config appsettings set --resource-group ${azurerm_resource_group.rg.name} --name ${azurerm_linux_web_app.app.name} --settings PUPPETEER_WSS_ENDPOINT=wss://${azurerm_linux_web_app.browserless.default_hostname}
-EOT
-  }
-
-  depends_on = [azurerm_linux_web_app.app, azurerm_linux_web_app.browserless]
-}
